@@ -1,0 +1,5 @@
+{
+  "name": "Problem Log Dashboard",
+  "description": "A problem logging dashboard with secure authentication, captcha protection, and user management views.",
+  "requestFramePermissions": []
+}
