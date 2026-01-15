@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Complaint, User, Location, ComplaintComment } from '../types';
 import { logActivity } from '../services/activityService';
 import { getLocations } from '../services/locationService';
-import { Plus, Search, MessageSquare, X, Loader2, Clock, CheckCircle, AlertTriangle, AlertCircle, PlayCircle, PauseCircle, Send, ChevronDown, MapPin } from 'lucide-react';
+import { Plus, Search, MessageSquare, X, Loader2, Clock, CheckCircle, AlertCircle, PlayCircle, PauseCircle, Send, ChevronDown, MapPin } from 'lucide-react';
 
 interface ComplaintListProps {
   currentUser?: User;
