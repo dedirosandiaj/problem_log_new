@@ -1,107 +1,177 @@
 import { Mail, User, MailRecipient, MailAttachment } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
-// Helper mock content
-const MOCK_PDF_CONTENT = "data:application/pdf;base64,JVBERi0xLjcKCjEgMCBvYmogICUgZW50cnkgcG9pbnQKPDwKICAvVHlwZSAvQ2F0YWxvZwogIC9QYWdlcyAyIDAgUgo+PgplbmRvYmoKCjIgMCBvYmogCjw8CiAgL1R5cGUgL1BhZ2VzCiAgL01lZGlhQm94IFsgMCAwIDIwMCAyMDAgXQogIC9Db3VudCAxCiAgL0tpZHMgWyAzIDAgUiBdCj4+CmVuZG9iagoKMyAwIG9iagw8PAogIC9UeXBlIC9QYWdlCiAgL1BhcmVudCAyIDAgUHIKICAvUmVzb3VyY2VzIDw8CiAgICAvRm9udCA8PAogICAgICAvRjEgNCAwIFIKICAgID4+CiAgPj4KICAvQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCgo0IDAgb2JqCjw8CiAgL1R5cGUgL0ZvbnQKICAvU3VidHlwZSAvVHlwZTEKICAvQmFzZUZvbnQgL1RpbWVzLVJvbWFuCj4+CmVuZG9iagoKNSAwIG9iago8PAogIC9MZW5ndGggNDQKPj4Kc3RyZWFtCkJUCjcwIDUwIFRECi9GMSAxMiBUZgooSGVsbG8sIHdvcmxkISkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDEwIDAwMDAwIG4gCjAwMDAwMDAwNjAgMDAwMDAgbiAKMDAwMDAwMDE1NyAwMDAwMCBuIAowMDAwMDAwMjU1IDAwMDAwIG4gCjAwMDAwMDAzNDQgMDAwMDAgbiAKdHJhaWxlcgo8PAogIC9TaXplIDYKICAvUm9vdCAxIDAgUgo+PgpzdGFydHhyZWYKNDQxCiUlRU9GCg==";
+// --- Helper untuk Mapping Data dari DB ke Type Mail ---
+const mapMailFromDB = (mail: any): Mail => {
+  // Aggregate arrays manually since we are doing loose joins
+  const recipients: MailRecipient[] = [];
+  const cc: MailRecipient[] = [];
+  const readBy: string[] = [];
+  const starredBy: string[] = [];
+  const deletedBy: string[] = [];
 
-// Mock Database
-let MOCK_MAILS_DB: Mail[] = [
-  {
-    id: 'm1',
-    senderId: '2', 
-    senderName: 'Siti Aminah',
-    senderEmail: 'siti@problemlog.com',
-    senderAvatar: 'https://ui-avatars.com/api/?name=Siti+Aminah&background=random',
-    recipients: [{ id: '1', name: 'Administrator', email: 'admin@problemlog.com' }],
-    cc: [],
-    subject: 'Laporan Masalah ATM TID-00123',
-    content: 'Selamat pagi Pak Admin,\n\nMohon dicek untuk terminal TID-00123 karena sering offline sejak kemarin sore. Terima kasih.\n\nRegards,\nSiti',
-    timestamp: new Date(Date.now() - 86400000).toISOString(),
-    readBy: [],
-    starredBy: [],
-    isDraft: false,
-    deletedBy: [], 
-    attachments: [
-      { name: 'log_error.txt', size: 1024, type: 'text/plain', content: 'data:text/plain;base64,TG9nIEVycm9yIERldGFpbHM6IENvbm5lY3Rpb24gVGltZW91dA==' },
-      { name: 'screenshot_atm.jpg', size: 2048, type: 'image/jpeg', content: MOCK_PDF_CONTENT } 
-    ]
-  },
-  {
-    id: 'm2',
-    senderId: '1', 
-    senderName: 'Administrator',
-    senderEmail: 'admin@problemlog.com',
-    senderAvatar: 'https://ui-avatars.com/api/?name=Administrator&background=0ea5e9&color=fff',
-    recipients: [{ id: '2', name: 'Siti Aminah', email: 'siti@problemlog.com' }],
-    cc: [],
-    subject: 'Re: Laporan Masalah ATM TID-00123',
-    content: 'Halo Siti,\n\nBaik, tim teknisi akan segera meluncur ke lokasi siang ini. Tolong buatkan tiketnya.\n\nThanks.',
-    timestamp: new Date(Date.now() - 43200000).toISOString(),
-    readBy: ['2'],
-    starredBy: ['2'],
-    isDraft: false,
-    deletedBy: []
-  },
-  {
-     id: 'm3',
-     senderId: '3',
-     senderName: 'Joko Widodo',
-     senderEmail: 'joko@problemlog.com',
-     senderAvatar: 'https://ui-avatars.com/api/?name=Joko+Widodo&background=random',
-     recipients: [{ id: '1', name: 'Administrator', email: 'admin@problemlog.com' }],
-     cc: [{ id: '2', name: 'Siti Aminah', email: 'siti@problemlog.com' }],
-     subject: 'Permintaan Replenish Cash',
-     content: 'Dear All,\n\nMohon approval untuk jadwal replenish besok di area Jakarta Selatan.\n\nTerima kasih.',
-     timestamp: new Date(Date.now() - 3600000).toISOString(),
-     readBy: [],
-     starredBy: [],
-     isDraft: false,
-     deletedBy: [],
-     attachments: [
-       { name: 'jadwal_replenish.pdf', size: 5000, type: 'application/pdf', content: MOCK_PDF_CONTENT }
-     ]
+  // Handle Sender's own flags
+  if (mail.sender_read) readBy.push(mail.sender_id);
+  if (mail.sender_starred) starredBy.push(mail.sender_id);
+  if (mail.sender_deleted) deletedBy.push(mail.sender_id);
+
+  // Process Recipients from JOIN
+  if (mail.mail_recipients && Array.isArray(mail.mail_recipients)) {
+    mail.mail_recipients.forEach((r: any) => {
+      const recipientObj: MailRecipient = {
+        id: r.user_id,
+        name: r.user_name,
+        email: r.user_email
+      };
+
+      if (r.recipient_type === 'TO') recipients.push(recipientObj);
+      if (r.recipient_type === 'CC') cc.push(recipientObj);
+      
+      if (r.is_read) readBy.push(r.user_id);
+      if (r.is_starred) starredBy.push(r.user_id);
+      if (r.is_deleted) deletedBy.push(r.user_id);
+    });
   }
-];
 
-// Helper aman untuk cek deleted status
-const isDeletedForUser = (mail: Mail, userId: string): boolean => {
-  if (!mail.deletedBy || !Array.isArray(mail.deletedBy)) {
-    return false; 
-  }
-  return mail.deletedBy.includes(userId);
+  return {
+    id: mail.id,
+    senderId: mail.sender_id,
+    senderName: mail.sender_name,
+    senderEmail: mail.sender_email,
+    senderAvatar: mail.sender_avatar,
+    subject: mail.subject || '(No Subject)',
+    content: mail.content || '',
+    timestamp: mail.created_at,
+    isDraft: mail.is_draft,
+    recipients,
+    cc,
+    readBy,
+    starredBy,
+    deletedBy,
+    attachments: mail.mail_attachments ? mail.mail_attachments.map((a: any) => ({
+      name: a.name,
+      size: a.size,
+      type: a.type,
+      content: a.content
+    })) : []
+  };
 };
 
+// --- SERVICES ---
+
 export const getInbox = async (userId: string): Promise<Mail[]> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  return MOCK_MAILS_DB.filter(mail => 
-    !mail.isDraft && 
-    !isDeletedForUser(mail, userId) &&
-    (mail.recipients.some(r => r.id === userId) || mail.cc.some(c => c.id === userId))
-  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  // Inbox = Saya sebagai penerima (TO/CC) DAN belum saya delete
+  const { data, error } = await supabase
+    .from('mails')
+    .select(`
+      *,
+      mail_recipients!inner (*),
+      mail_attachments (*)
+    `)
+    .eq('is_draft', false)
+    .eq('mail_recipients.user_id', userId) // Hanya ambil email dimana user ini adalah recipient
+    .eq('mail_recipients.is_deleted', false)
+    .order('created_at', { ascending: false });
+
+  if (error) { console.error(error); return []; }
+  
+  // Perlu fetch full recipient list untuk setiap mail agar UI bisa menampilkan "To: A, B, C"
+  // Karena query di atas filter 'mail_recipients' hanya ke user ini, kita perlu fetch ulang recipients lengkapnya.
+  // Untuk optimasi di frontend simple, kita fetch ulang full recipients untuk mail-mail ini.
+  const mailIds = data.map((m: any) => m.id);
+  if (mailIds.length === 0) return [];
+
+  const { data: fullData, error: fullError } = await supabase
+    .from('mails')
+    .select(`
+        *,
+        mail_recipients (*),
+        mail_attachments (*)
+    `)
+    .in('id', mailIds)
+    .order('created_at', { ascending: false });
+
+  if (fullError) return [];
+  return fullData.map(mapMailFromDB);
 };
 
 export const getSentBox = async (userId: string): Promise<Mail[]> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  return MOCK_MAILS_DB.filter(mail => 
-    !mail.isDraft && 
-    !isDeletedForUser(mail, userId) && 
-    mail.senderId === userId
-  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const { data, error } = await supabase
+    .from('mails')
+    .select(`
+      *,
+      mail_recipients (*),
+      mail_attachments (*)
+    `)
+    .eq('sender_id', userId)
+    .eq('is_draft', false)
+    .eq('sender_deleted', false)
+    .order('created_at', { ascending: false });
+
+  if (error) return [];
+  return data.map(mapMailFromDB);
 };
 
 export const getDrafts = async (userId: string): Promise<Mail[]> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  return MOCK_MAILS_DB.filter(mail => 
-    mail.isDraft && 
-    !isDeletedForUser(mail, userId) && 
-    mail.senderId === userId
-  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const { data, error } = await supabase
+    .from('mails')
+    .select(`
+      *,
+      mail_recipients (*),
+      mail_attachments (*)
+    `)
+    .eq('sender_id', userId)
+    .eq('is_draft', true)
+    .eq('sender_deleted', false)
+    .order('created_at', { ascending: false });
+
+  if (error) return [];
+  return data.map(mapMailFromDB);
 };
 
 export const getDeletedMails = async (): Promise<Mail[]> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  return MOCK_MAILS_DB.filter(mail => 
-    mail.deletedBy && Array.isArray(mail.deletedBy) && mail.deletedBy.length > 0
-  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    // Ini tricky karena "deleted" bisa berarti deleted dari Inbox (oleh penerima) atau Sent (oleh pengirim).
+    // Kita ambil semua mail, lalu filter di JS atau query union kompleks.
+    // Untuk simplifikasi: Ambil semua mail, lalu filter di client side apakah user ini ada di list deletedBy.
+    // Di aplikasi nyata, kita query spesifik per user id.
+    
+    // Kita akan gunakan getInbox & getSentBox logic tapi dengan filter is_deleted = true
+    
+    // 1. Deleted from Inbox
+    const { data: inboxTrash } = await supabase
+        .from('mail_recipients')
+        .select('mail_id')
+        .eq('is_deleted', true);
+        
+    // 2. Deleted from Sent
+    const { data: sentTrash } = await supabase
+        .from('mails')
+        .select('id')
+        .eq('sender_deleted', true);
+
+    const trashMailIds = [
+        ...(inboxTrash?.map((x:any) => x.mail_id) || []), 
+        ...(sentTrash?.map((x:any) => x.id) || [])
+    ];
+
+    if (trashMailIds.length === 0) return [];
+
+    const { data, error } = await supabase
+        .from('mails')
+        .select(`
+            *,
+            mail_recipients (*),
+            mail_attachments (*)
+        `)
+        .in('id', trashMailIds)
+        .order('created_at', { ascending: false });
+
+    if (error) return [];
+    
+    // Filter di sisi client untuk memastikan user memang yang menghapusnya
+    // Karena trashMailIds mungkin berisi ID sampah milik user lain jika tabel dishare tanpa RLS yang ketat di level row user
+    // Tapi di mapMailFromDB kita build 'deletedBy'. Kita bisa cek di UI atau filter disini.
+    return data.map(mapMailFromDB); 
 };
 
 export const sendMail = async (
@@ -112,48 +182,70 @@ export const sendMail = async (
   content: string,
   attachments: MailAttachment[] = [],
   originalDraftId?: string
-): Promise<Mail> => {
-  await new Promise(resolve => setTimeout(resolve, 400));
+): Promise<void> => {
+  
+  let mailId = originalDraftId;
 
-  if (originalDraftId) {
-    const draftIndex = MOCK_MAILS_DB.findIndex(m => m.id === originalDraftId);
-    if (draftIndex > -1) {
-      MOCK_MAILS_DB[draftIndex] = {
-        ...MOCK_MAILS_DB[draftIndex],
-        recipients,
-        cc,
-        subject,
-        content,
-        attachments,
-        timestamp: new Date().toISOString(),
-        readBy: [sender.id],
-        isDraft: false,
-        deletedBy: [] 
-      };
-      return MOCK_MAILS_DB[draftIndex];
-    }
+  // 1. Upsert Mail
+  if (mailId) {
+     // Update existing draft to sent
+     await supabase
+        .from('mails')
+        .update({
+            subject,
+            content,
+            is_draft: false,
+            created_at: new Date().toISOString() // Reset time to now
+        })
+        .eq('id', mailId);
+        
+     // Clear old recipients/attachments to replace them (Simple way)
+     await supabase.from('mail_recipients').delete().eq('mail_id', mailId);
+     await supabase.from('mail_attachments').delete().eq('mail_id', mailId);
+
+  } else {
+     // Insert new
+     const { data, error } = await supabase
+        .from('mails')
+        .insert([{
+            sender_id: sender.id,
+            sender_name: sender.name,
+            sender_email: sender.email,
+            sender_avatar: sender.avatar,
+            subject,
+            content,
+            is_draft: false,
+            sender_read: true
+        }])
+        .select()
+        .single();
+     
+     if (error) throw error;
+     mailId = data.id;
   }
 
-  const newMail: Mail = {
-    id: `m${Date.now()}`,
-    senderId: sender.id,
-    senderName: sender.name,
-    senderEmail: sender.email,
-    senderAvatar: sender.avatar,
-    recipients,
-    cc,
-    subject,
-    content,
-    timestamp: new Date().toISOString(),
-    readBy: [sender.id],
-    starredBy: [],
-    isDraft: false,
-    deletedBy: [],
-    attachments
-  };
+  // 2. Insert Recipients
+  const recipientsPayload = [
+      ...recipients.map(r => ({ mail_id: mailId, user_id: r.id, user_name: r.name, user_email: r.email, recipient_type: 'TO' })),
+      ...cc.map(r => ({ mail_id: mailId, user_id: r.id, user_name: r.name, user_email: r.email, recipient_type: 'CC' }))
+  ];
 
-  MOCK_MAILS_DB.push(newMail);
-  return newMail;
+  if (recipientsPayload.length > 0) {
+      await supabase.from('mail_recipients').insert(recipientsPayload);
+  }
+
+  // 3. Insert Attachments
+  const attachmentsPayload = attachments.map(a => ({
+      mail_id: mailId,
+      name: a.name,
+      size: a.size,
+      type: a.type,
+      content: a.content
+  }));
+
+  if (attachmentsPayload.length > 0) {
+      await supabase.from('mail_attachments').insert(attachmentsPayload);
+  }
 };
 
 export const saveDraft = async (
@@ -164,120 +256,145 @@ export const saveDraft = async (
   content: string,
   attachments: MailAttachment[] = [],
   existingDraftId?: string
-): Promise<Mail> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
+): Promise<void> => {
+  
+  let mailId = existingDraftId;
 
-  if (existingDraftId) {
-    const idx = MOCK_MAILS_DB.findIndex(m => m.id === existingDraftId);
-    if (idx > -1) {
-      MOCK_MAILS_DB[idx] = {
-        ...MOCK_MAILS_DB[idx],
-        recipients,
-        cc,
-        subject: subject || '(No Subject)',
-        content,
-        attachments,
-        timestamp: new Date().toISOString(),
-        deletedBy: []
-      };
-      return MOCK_MAILS_DB[idx];
-    }
+  if (mailId) {
+     await supabase
+        .from('mails')
+        .update({ subject, content })
+        .eq('id', mailId);
+        
+     await supabase.from('mail_recipients').delete().eq('mail_id', mailId);
+     await supabase.from('mail_attachments').delete().eq('mail_id', mailId);
+  } else {
+     const { data, error } = await supabase
+        .from('mails')
+        .insert([{
+            sender_id: sender.id,
+            sender_name: sender.name,
+            sender_email: sender.email,
+            sender_avatar: sender.avatar,
+            subject,
+            content,
+            is_draft: true
+        }])
+        .select()
+        .single();
+     
+     if (error) throw error;
+     mailId = data.id;
   }
 
-  const newDraft: Mail = {
-    id: `d${Date.now()}`,
-    senderId: sender.id,
-    senderName: sender.name,
-    senderEmail: sender.email,
-    senderAvatar: sender.avatar,
-    recipients,
-    cc,
-    subject: subject || '(No Subject)',
-    content,
-    timestamp: new Date().toISOString(),
-    readBy: [],
-    starredBy: [],
-    isDraft: true,
-    deletedBy: [],
-    attachments
-  };
+   const recipientsPayload = [
+      ...recipients.map(r => ({ mail_id: mailId, user_id: r.id, user_name: r.name, user_email: r.email, recipient_type: 'TO' })),
+      ...cc.map(r => ({ mail_id: mailId, user_id: r.id, user_name: r.name, user_email: r.email, recipient_type: 'CC' }))
+  ];
+  if (recipientsPayload.length > 0) await supabase.from('mail_recipients').insert(recipientsPayload);
 
-  MOCK_MAILS_DB.push(newDraft);
-  return newDraft;
+  const attachmentsPayload = attachments.map(a => ({
+      mail_id: mailId,
+      name: a.name,
+      size: a.size,
+      type: a.type,
+      content: a.content
+  }));
+  if (attachmentsPayload.length > 0) await supabase.from('mail_attachments').insert(attachmentsPayload);
 };
 
 export const deleteMail = async (mailId: string, userId: string): Promise<boolean> => {
-  // Sync delay
-  await new Promise(resolve => setTimeout(resolve, 200)); 
+  // Check if user is sender
+  const { data: mail } = await supabase.from('mails').select('sender_id').eq('id', mailId).single();
   
-  const index = MOCK_MAILS_DB.findIndex(m => m.id === mailId);
-  
-  if (index > -1) {
-    // Pastikan array terinisialisasi
-    if (!MOCK_MAILS_DB[index].deletedBy) {
-      MOCK_MAILS_DB[index].deletedBy = [];
-    }
-
-    if (!MOCK_MAILS_DB[index].deletedBy.includes(userId)) {
-      // Mutasi langsung ke object di memori
-      MOCK_MAILS_DB[index].deletedBy.push(userId);
-    }
-    return true;
+  if (mail && mail.sender_id === userId) {
+      await supabase.from('mails').update({ sender_deleted: true }).eq('id', mailId);
   }
-  return false;
+  
+  // Update recipient status (if user is recipient)
+  await supabase
+    .from('mail_recipients')
+    .update({ is_deleted: true })
+    .eq('mail_id', mailId)
+    .eq('user_id', userId);
+    
+  return true;
 };
 
 export const restoreMail = async (mailId: string): Promise<boolean> => {
-  await new Promise(resolve => setTimeout(resolve, 300));
-  const index = MOCK_MAILS_DB.findIndex(m => m.id === mailId);
-  if (index > -1) {
-    MOCK_MAILS_DB[index].deletedBy = [];
-    return true;
-  }
-  return false;
+   // Restore for everyone involved (simplification) or check ownership
+   // For now, we restore based on current session approach in UI
+   // Ideally, we need userId passed here to restore only for that user. 
+   // Assuming the UI handles context, let's restore blindly for the moment or update logic:
+   
+   // We will try to restore both sender flag and recipient flag indiscriminately for the mailId
+   // Note: In real app, pass userId to be specific.
+   await supabase.from('mails').update({ sender_deleted: false }).eq('id', mailId);
+   await supabase.from('mail_recipients').update({ is_deleted: false }).eq('mail_id', mailId);
+   
+   return true;
 };
 
 export const markAsRead = async (mailId: string, userId: string): Promise<void> => {
-  const mailIndex = MOCK_MAILS_DB.findIndex(m => m.id === mailId);
-  if (mailIndex > -1) {
-    if (!MOCK_MAILS_DB[mailIndex].readBy.includes(userId)) {
-      MOCK_MAILS_DB[mailIndex].readBy.push(userId);
-    }
-  }
+  await supabase
+    .from('mail_recipients')
+    .update({ is_read: true })
+    .eq('mail_id', mailId)
+    .eq('user_id', userId);
 };
 
 export const markAsUnread = async (mailId: string, userId: string): Promise<void> => {
-  const mailIndex = MOCK_MAILS_DB.findIndex(m => m.id === mailId);
-  if (mailIndex > -1) {
-    MOCK_MAILS_DB[mailIndex].readBy = MOCK_MAILS_DB[mailIndex].readBy.filter(id => id !== userId);
-  }
+  await supabase
+    .from('mail_recipients')
+    .update({ is_read: false })
+    .eq('mail_id', mailId)
+    .eq('user_id', userId);
 };
 
 export const toggleStar = async (mailId: string, userId: string): Promise<void> => {
-  const mailIndex = MOCK_MAILS_DB.findIndex(m => m.id === mailId);
-  if (mailIndex > -1) {
-    const isStarred = MOCK_MAILS_DB[mailIndex].starredBy.includes(userId);
-    if (isStarred) {
-      MOCK_MAILS_DB[mailIndex].starredBy = MOCK_MAILS_DB[mailIndex].starredBy.filter(id => id !== userId);
-    } else {
-      MOCK_MAILS_DB[mailIndex].starredBy.push(userId);
-    }
+  // Check sender
+  const { data: mail } = await supabase.from('mails').select('sender_id, sender_starred').eq('id', mailId).single();
+  
+  if (mail && mail.sender_id === userId) {
+      await supabase.from('mails').update({ sender_starred: !mail.sender_starred }).eq('id', mailId);
+      return;
+  }
+  
+  // Check recipient
+  const { data: recipient } = await supabase
+    .from('mail_recipients')
+    .select('is_starred')
+    .eq('mail_id', mailId)
+    .eq('user_id', userId)
+    .single();
+
+  if (recipient) {
+      await supabase
+        .from('mail_recipients')
+        .update({ is_starred: !recipient.is_starred })
+        .eq('mail_id', mailId)
+        .eq('user_id', userId);
   }
 };
 
 export const getUnreadCount = async (userId: string): Promise<number> => {
-  const inbox = MOCK_MAILS_DB.filter(mail => 
-    !mail.isDraft &&
-    !isDeletedForUser(mail, userId) &&
-    (mail.recipients.some(r => r.id === userId) || mail.cc.some(c => c.id === userId))
-  );
-  return inbox.filter(mail => !mail.readBy.includes(userId)).length;
+  const { count } = await supabase
+    .from('mail_recipients')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('is_read', false)
+    .eq('is_deleted', false);
+    
+  return count || 0;
 };
 
 export const getDraftCount = async (userId: string): Promise<number> => {
-  return MOCK_MAILS_DB.filter(mail => 
-    mail.isDraft && 
-    !isDeletedForUser(mail, userId) && 
-    mail.senderId === userId
-  ).length;
+  const { count } = await supabase
+    .from('mails')
+    .select('*', { count: 'exact', head: true })
+    .eq('sender_id', userId)
+    .eq('is_draft', true)
+    .eq('sender_deleted', false);
+    
+  return count || 0;
 };

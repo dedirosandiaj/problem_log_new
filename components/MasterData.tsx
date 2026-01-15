@@ -1,18 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { logActivity } from '../services/activityService';
+import { getMasterDataByType, createMasterData, updateMasterData, deleteMasterData, MasterItem } from '../services/masterDataService';
 import { Plus, Pencil, Trash2, Search, X, Loader2, List, Info, CreditCard, Upload, Download, FileSpreadsheet, MessageSquare } from 'lucide-react';
 
 interface MasterDataProps {
   currentUser?: User;
   type: 'CATEGORY' | 'INFO' | 'BANK' | 'COMPLAINT_CATEGORY';
-}
-
-interface MasterItem {
-  id: string;
-  name: string;
-  description: string;
-  code?: string;
 }
 
 export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => {
@@ -40,48 +34,28 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
         title: 'Kategori Problem', 
         icon: List, 
         prefix: 'CAT',
-        hasDescription: true, // Show description column/input
-        mockData: [
-          { id: '1', name: 'Hardware', description: 'Masalah perangkat keras ATM', code: 'CAT-1001' },
-          { id: '2', name: 'Software', description: 'Masalah perangkat lunak/sistem', code: 'CAT-2002' },
-          { id: '3', name: 'Network', description: 'Masalah jaringan komunikasi', code: 'CAT-3003' },
-        ],
+        hasDescription: true,
         templateHeader: 'name,description'
       };
       case 'COMPLAINT_CATEGORY': return {
         title: 'Kategori Aduan',
         icon: MessageSquare,
-        prefix: 'ADC', // Aduan Category
+        prefix: 'ADC',
         hasDescription: true,
-        mockData: [
-          { id: '1', name: 'Nasabah Komplain', description: 'Komplain langsung dari nasabah', code: 'ADC-001' },
-          { id: '2', name: 'Temuan Internal', description: 'Temuan dari tim internal', code: 'ADC-002' },
-          { id: '3', name: 'Laporan Vendor', description: 'Laporan dari vendor pengelola', code: 'ADC-003' },
-        ],
         templateHeader: 'name,description'
       };
       case 'INFO': return { 
         title: 'Info Problem', 
         icon: Info, 
         prefix: 'INF',
-        hasDescription: true, // Show description column/input
-        mockData: [
-          { id: '1', name: 'Card Reader Rusak', description: 'Pembaca kartu tidak berfungsi', code: 'INF-4001' },
-          { id: '2', name: 'Dispenser Error', description: 'Uang tidak keluar', code: 'INF-5002' },
-          { id: '3', name: 'Printer Habis', description: 'Kertas struk habis', code: 'INF-6003' },
-        ],
+        hasDescription: true,
         templateHeader: 'name,description'
       };
       case 'BANK': return { 
         title: 'Bank Issuer', 
         icon: CreditCard, 
         prefix: 'BNK',
-        hasDescription: false, // HIDE description column/input
-        mockData: [
-          { id: '1', name: 'Bank BRI', description: '', code: 'BNK-0002' },
-          { id: '2', name: 'Bank Mandiri', description: '', code: 'BNK-0008' },
-          { id: '3', name: 'Bank BCA', description: '', code: 'BNK-0014' },
-        ],
+        hasDescription: false,
         templateHeader: 'name'
       };
     }
@@ -89,14 +63,20 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
 
   const config = getConfig();
 
-  // Simulate Fetch
-  useEffect(() => {
+  const fetchData = async () => {
     setLoading(true);
-    // Mock API call
-    setTimeout(() => {
-      setData(config.mockData);
+    try {
+      const result = await getMasterDataByType(type);
+      setData(result);
+    } catch (error) {
+      console.error("Failed to fetch master data", error);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
   }, [type]);
 
   const resetForm = () => {
@@ -124,46 +104,53 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
     e.preventDefault();
     setActionLoading(true);
     
-    // Simulate API delay
-    await new Promise(r => setTimeout(r, 500));
-
-    if (selectedItem) {
-      // Update
-      // Code tidak berubah saat update
-      setData(prev => prev.map(item => item.id === selectedItem.id ? { ...item, name: formData.name, description: formData.description } : item));
-      if (currentUser) logActivity(currentUser, 'UPDATE', config.title, `Updated ${formData.name}`);
-    } else {
-      // Create
-      // Code digenerate otomatis di background
-      const newCode = generateCode();
-      const newItem = { 
-        id: Math.random().toString(36).substr(2, 9), 
-        name: formData.name,
-        description: formData.description,
-        code: newCode 
-      };
-      
-      setData(prev => [...prev, newItem]);
-      if (currentUser) logActivity(currentUser, 'CREATE', config.title, `Created ${formData.name} (${newCode})`);
+    try {
+      if (selectedItem) {
+        // Update
+        await updateMasterData(selectedItem.id, {
+          name: formData.name,
+          description: formData.description
+        });
+        
+        if (currentUser) logActivity(currentUser, 'UPDATE', config.title, `Updated ${formData.name}`);
+      } else {
+        // Create
+        const newCode = generateCode();
+        await createMasterData({
+            type: type,
+            name: formData.name,
+            description: formData.description,
+            code: newCode
+        });
+        
+        if (currentUser) logActivity(currentUser, 'CREATE', config.title, `Created ${formData.name} (${newCode})`);
+      }
+      await fetchData();
+      setIsModalOpen(false);
+      resetForm();
+    } catch (error) {
+      alert("Gagal menyimpan data");
+    } finally {
+      setActionLoading(false);
     }
-
-    setActionLoading(false);
-    setIsModalOpen(false);
-    resetForm();
   };
 
   const handleDelete = async () => {
     if (!selectedItem) return;
     setActionLoading(true);
     
-    await new Promise(r => setTimeout(r, 500));
-    
-    setData(prev => prev.filter(item => item.id !== selectedItem.id));
-    if (currentUser) logActivity(currentUser, 'DELETE', config.title, `Deleted ${selectedItem.name}`);
-
-    setActionLoading(false);
-    setIsDeleteModalOpen(false);
-    setSelectedItem(null);
+    try {
+      await deleteMasterData(selectedItem.id);
+      if (currentUser) logActivity(currentUser, 'DELETE', config.title, `Deleted ${selectedItem.name}`);
+      
+      await fetchData();
+      setIsDeleteModalOpen(false);
+      setSelectedItem(null);
+    } catch (error) {
+       alert("Gagal menghapus data");
+    } finally {
+       setActionLoading(false);
+    }
   };
 
   // --- IMPORT / EXPORT LOGIC ---
@@ -181,7 +168,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
 
   const downloadTemplate = () => {
     const headers = config.templateHeader;
-    // Example row should NOT include code
     const example = config.hasDescription 
         ? `Contoh Nama ${type},Contoh Deskripsi Tambahan` 
         : `Contoh Nama ${type}`;
@@ -191,11 +177,9 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
   };
 
   const handleExport = () => {
-    // Export DOES include code (full data backup)
     const headers = config.hasDescription ? 'code,name,description' : 'code,name';
     
     const rows = data.map(item => {
-      // Simple CSV escaping for quotes
       const code = item.code ? `"${item.code.replace(/"/g, '""')}"` : '';
       const name = `"${item.name.replace(/"/g, '""')}"`;
       const desc = `"${item.description.replace(/"/g, '""')}"`;
@@ -226,52 +210,31 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
         
         // Skip header
         const dataLines = lines.slice(1);
-        const newItems: MasterItem[] = [];
-
-        // Track existing codes to ensure uniqueness
-        const existingCodes = new Set(data.map(item => item.code || ''));
         const prefix = config.prefix;
+        let successCount = 0;
 
-        dataLines.forEach(line => {
-           // Parse CSV
+        for (const line of dataLines) {
            const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
-           
            if (cols.length >= 1 && cols[0] !== '') {
-             // Generate Unique Code
-             let uniqueCode = '';
-             let isUnique = false;
-             let attempts = 0;
-
-             while (!isUnique && attempts < 1000) {
-               const rand = Math.floor(1000 + Math.random() * 9000); // 4 digit random
-               uniqueCode = `${prefix}-${rand}`;
-               if (!existingCodes.has(uniqueCode)) {
-                 isUnique = true;
-                 existingCodes.add(uniqueCode); // Add to set so next iteration in same batch doesn't use it
-               }
-               attempts++;
-             }
-
-             if (isUnique) {
-               newItems.push({
-                 id: Math.random().toString(36).substr(2, 9),
-                 code: uniqueCode,
+             const rand = Math.floor(1000 + Math.random() * 9000);
+             const uniqueCode = `${prefix}-${rand}`;
+             
+             await createMasterData({
+                 type: type,
                  name: cols[0] || 'Tanpa Nama',
-                 description: config.hasDescription ? (cols[1] || '') : ''
-               });
-             }
+                 description: config.hasDescription ? (cols[1] || '') : '',
+                 code: uniqueCode
+             });
+             successCount++;
            }
-        });
+        }
 
-        // Simulate Delay
-        await new Promise(r => setTimeout(r, 600));
-
-        setData(prev => [...prev, ...newItems]);
-        if (currentUser) logActivity(currentUser, 'IMPORT', config.title, `Imported ${newItems.length} items with auto-generated codes`);
-        alert(`Berhasil import ${newItems.length} data. Kode dibuat otomatis.`);
+        await fetchData();
+        if (currentUser) logActivity(currentUser, 'IMPORT', config.title, `Imported ${successCount} items`);
+        alert(`Berhasil import ${successCount} data.`);
         
       } catch (error) {
-        alert("Gagal membaca file CSV.");
+        alert("Gagal membaca atau menyimpan file CSV.");
       } finally {
         setIsImporting(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -299,7 +262,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
         </div>
         
         <div className="flex flex-wrap gap-2 w-full xl:w-auto">
-          {/* Template Button */}
           <button 
              onClick={downloadTemplate}
              className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 px-3 py-2.5 rounded-lg transition-all shadow-sm text-sm font-medium"
@@ -308,7 +270,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
              <span className="hidden sm:inline">Template</span>
           </button>
 
-          {/* Import Button */}
           <input 
              type="file" 
              ref={fileInputRef} 
@@ -325,7 +286,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
              <span>Import CSV</span>
           </button>
 
-          {/* Export Button */}
           <button 
              onClick={handleExport}
              className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-3 py-2.5 rounded-lg transition-all shadow-sm text-sm font-medium"
@@ -334,7 +294,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
              <span>Export</span>
           </button>
 
-          {/* Add Button */}
           <button 
             onClick={openAddModal}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg transition-all shadow-md hover:shadow-lg active:scale-95 font-medium ml-auto sm:ml-0"
@@ -378,7 +337,7 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
                   <td colSpan={config.hasDescription ? 5 : 4} className="p-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-3">
                       <Loader2 size={32} className="text-blue-500 animate-spin" />
-                      <span className="text-sm font-medium">Memuat data...</span>
+                      <span className="text-sm font-medium">Memuat data dari database...</span>
                     </div>
                   </td>
                 </tr>
@@ -433,15 +392,6 @@ export const MasterData: React.FC<MasterDataProps> = ({ currentUser, type }) => 
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-100 text-slate-500 cursor-not-allowed transition-all font-mono text-sm"
                   placeholder={`Contoh: ${config.prefix}-XXXX`}
                 />
-                {!selectedItem ? (
-                  <p className="text-[10px] text-blue-500 mt-1">
-                    *Kode akan dibuat otomatis oleh sistem saat disimpan.
-                  </p>
-                ) : (
-                   <p className="text-[10px] text-slate-400 mt-1">
-                    *Kode tidak dapat diubah setelah dibuat.
-                  </p>
-                )}
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-slate-600">Nama</label>

@@ -2,61 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Complaint, User, Location, ComplaintComment } from '../types';
 import { logActivity } from '../services/activityService';
 import { getLocations } from '../services/locationService';
+import { getComplaints, createComplaint, updateComplaint, addComment } from '../services/complaintService';
 import { Plus, Search, MessageSquare, X, Loader2, Clock, CheckCircle, AlertCircle, PlayCircle, PauseCircle, Send, ChevronDown, MapPin } from 'lucide-react';
 
 interface ComplaintListProps {
   currentUser?: User;
 }
-
-// Initial Mock Data (Updated with Comments Array)
-const MOCK_COMPLAINTS: Complaint[] = [
-  {
-    id: '1',
-    noTiket: 'TKT-99120',
-    nasabah: 'Budi Santoso',
-    terminalId: 'TID-00123',
-    waktuTrx: new Date(Date.now() - 86400000).toISOString(),
-    waktuAduan: new Date(Date.now() - 43200000).toISOString(),
-    jenisAduan: 'Uang Tidak Keluar',
-    severity: 'HIGH',
-    pengecekan: 'VALID',
-    status: 'IN PROGRESS',
-    comments: [
-       {
-         id: 'c1',
-         userId: '1',
-         userName: 'Administrator',
-         userRole: 'Super Admin',
-         avatar: 'https://ui-avatars.com/api/?name=Administrator&background=0ea5e9&color=fff',
-         text: 'Sudah dieskalasi ke tim FLM untuk pengecekan fisik mesin.',
-         timestamp: new Date(Date.now() - 40000000).toISOString()
-       }
-    ]
-  },
-  {
-    id: '2',
-    noTiket: 'TKT-88210',
-    nasabah: 'Siti Aminah',
-    terminalId: 'TID-00456',
-    waktuTrx: new Date(Date.now() - 172800000).toISOString(),
-    waktuAduan: new Date(Date.now() - 160000000).toISOString(),
-    jenisAduan: 'Kartu Tertelan',
-    severity: 'MEDIUM',
-    pengecekan: 'VALID',
-    status: 'CLOSED',
-    comments: [
-      {
-         id: 'c2',
-         userId: '2',
-         userName: 'Siti Aminah',
-         userRole: 'Helpdesk',
-         avatar: 'https://ui-avatars.com/api/?name=Siti+Aminah&background=random',
-         text: 'Kartu sudah diamankan di cabang terdekat. Nasabah sudah dihubungi.',
-         timestamp: new Date(Date.now() - 150000000).toISOString()
-       }
-    ]
-  }
-];
 
 export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -119,15 +70,18 @@ export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => 
       }
     }
 
-    // Simulate API fetch
     const fetchData = async () => {
-        const locs = await getLocations();
-        setLocations(locs);
-        
-        setTimeout(() => {
-            setComplaints(MOCK_COMPLAINTS);
+        try {
+            const locs = await getLocations();
+            setLocations(locs);
+            
+            const realComplaints = await getComplaints();
+            setComplaints(realComplaints);
+        } catch (error) {
+            console.error("Error fetching data:", error);
+        } finally {
             setLoading(false);
-        }, 500);
+        }
     };
     fetchData();
   }, []);
@@ -200,8 +154,8 @@ export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => 
       nasabah: complaint.nasabah,
       terminalId: complaint.terminalId,
       // Slice ISO string to fit datetime-local input (YYYY-MM-DDThh:mm)
-      waktuTrx: complaint.waktuTrx.slice(0, 16),
-      waktuAduan: complaint.waktuAduan.slice(0, 16),
+      waktuTrx: complaint.waktuTrx ? new Date(complaint.waktuTrx).toISOString().slice(0, 16) : '',
+      waktuAduan: complaint.waktuAduan ? new Date(complaint.waktuAduan).toISOString().slice(0, 16) : '',
       jenisAduan: complaint.jenisAduan,
       severity: complaint.severity,
       pengecekan: complaint.pengecekan,
@@ -216,88 +170,85 @@ export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => 
     e.preventDefault();
     setActionLoading(true);
 
-    // Simulate API delay
-    await new Promise(r => setTimeout(r, 600));
+    try {
+        if (editingId) {
+            // UPDATE LOGIC (DB)
+            await updateComplaint(editingId, {
+                ...formData,
+                waktuTrx: new Date(formData.waktuTrx).toISOString(),
+                waktuAduan: new Date(formData.waktuAduan).toISOString()
+            });
+            
+            // Refresh List
+            const refreshed = await getComplaints();
+            setComplaints(refreshed);
+            
+            if (currentUser) {
+                logActivity(currentUser, 'UPDATE', 'Data Aduan', `Memperbarui data aduan ${formData.nasabah}`);
+            }
+        } else {
+            // CREATE LOGIC (DB)
+            const newTicket = generateTicketNumber();
+            await createComplaint({
+                noTiket: newTicket,
+                ...formData,
+                waktuTrx: formData.waktuTrx ? new Date(formData.waktuTrx).toISOString() : new Date().toISOString(),
+                waktuAduan: formData.waktuAduan ? new Date(formData.waktuAduan).toISOString() : new Date().toISOString()
+            });
+            
+            const refreshed = await getComplaints();
+            setComplaints(refreshed);
 
-    if (editingId) {
-       // UPDATE LOGIC
-       setComplaints(prev => prev.map(c => {
-         if (c.id === editingId) {
-            return {
-              ...c,
-              ...formData,
-              waktuTrx: new Date(formData.waktuTrx).toISOString(),
-              waktuAduan: new Date(formData.waktuAduan).toISOString(),
-            };
-         }
-         return c;
-       }));
-       
-       if (currentUser) {
-         logActivity(currentUser, 'UPDATE', 'Data Aduan', `Memperbarui data aduan ${formData.nasabah}`);
-       }
-    } else {
-      // CREATE LOGIC
-      const newComplaint: Complaint = {
-        id: Math.random().toString(36).substr(2, 9),
-        noTiket: generateTicketNumber(),
-        ...formData,
-        waktuTrx: formData.waktuTrx ? new Date(formData.waktuTrx).toISOString() : new Date().toISOString(),
-        waktuAduan: formData.waktuAduan ? new Date(formData.waktuAduan).toISOString() : new Date().toISOString(),
-        comments: [] // Init empty comments
-      };
+            if (currentUser) {
+                logActivity(currentUser, 'CREATE', 'Data Aduan', `Membuat aduan baru ${newTicket} - ${formData.nasabah}`);
+            }
+        }
 
-      setComplaints(prev => [newComplaint, ...prev]);
-      
-      // Mark as viewed immediately
-      updateViewedCount(newComplaint.id, 0);
-
-      if (currentUser) {
-        logActivity(currentUser, 'CREATE', 'Data Aduan', `Membuat aduan baru ${newComplaint.noTiket} - ${newComplaint.nasabah}`);
-      }
+        setIsModalOpen(false);
+        setFormData(initialFormState);
+        setTerminalSearch('');
+        setEditingId(null);
+    } catch (err) {
+        alert("Gagal menyimpan data: " + err);
+    } finally {
+        setActionLoading(false);
     }
-
-    setActionLoading(false);
-    setIsModalOpen(false);
-    setFormData(initialFormState);
-    setTerminalSearch('');
-    setEditingId(null);
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
       if (!selectedComplaint || !newComment.trim() || !currentUser) return;
 
-      const newComm: ComplaintComment = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId: currentUser.id,
-          userName: currentUser.name,
-          userRole: currentUser.role,
-          avatar: currentUser.avatar,
-          text: newComment,
-          timestamp: new Date().toISOString()
-      };
+      try {
+        const commentData = {
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.role,
+            avatar: currentUser.avatar,
+            text: newComment
+        };
 
-      // Update Local State
-      const updatedComplaint = {
-          ...selectedComplaint,
-          comments: [...selectedComplaint.comments, newComm]
-      };
+        const addedComment = await addComment(selectedComplaint.id, commentData);
+        
+        // Update Local State
+        const updatedComplaint = {
+            ...selectedComplaint,
+            comments: [...selectedComplaint.comments, addedComment]
+        };
 
-      setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? updatedComplaint : c));
-      setSelectedComplaint(updatedComplaint);
-      setNewComment('');
+        setComplaints(prev => prev.map(c => c.id === selectedComplaint.id ? updatedComplaint : c));
+        setSelectedComplaint(updatedComplaint);
+        setNewComment('');
 
-      // Update read status immediately so badge doesn't show for my own comment
-      updateViewedCount(updatedComplaint.id, updatedComplaint.comments.length);
-
-      logActivity(currentUser, 'UPDATE', 'Data Aduan', `Menambahkan komentar pada tiket ${selectedComplaint.noTiket}`);
+        updateViewedCount(updatedComplaint.id, updatedComplaint.comments.length);
+        logActivity(currentUser, 'UPDATE', 'Data Aduan', `Menambahkan komentar pada tiket ${selectedComplaint.noTiket}`);
+      } catch (err) {
+          alert("Gagal kirim komentar");
+      }
   };
 
   const openCommentModal = (complaint: Complaint) => {
     setSelectedComplaint(complaint);
     setIsCommentModalOpen(true);
-    
-    // Mark all current comments as viewed
     updateViewedCount(complaint.id, complaint.comments.length);
   };
 
@@ -471,11 +422,12 @@ export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => 
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Create/Edit/Comment Modal (Same structure as before, logic inside handles DB now) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsModalOpen(false)}></div>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl relative z-10 flex flex-col max-h-[90vh] animate-fade-in-up">
+             {/* ... Modal content similar to previous ... */}
              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
                <h3 className="text-lg font-bold text-slate-800">
                    {editingId ? 'Edit Data Aduan' : 'Buat Aduan Baru'}
@@ -485,14 +437,13 @@ export const ComplaintList: React.FC<ComplaintListProps> = ({ currentUser }) => 
 
              <div className="p-6 overflow-y-auto">
                 <form id="complaintForm" onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {/* Info Block */}
                    {!editingId && (
                        <div className="md:col-span-2 bg-blue-50 p-3 rounded-lg border border-blue-100 flex items-center gap-2 mb-2">
                           <AlertCircle size={16} className="text-blue-600" />
                           <span className="text-sm text-blue-700">Nomor Tiket akan digenerate otomatis oleh sistem.</span>
                        </div>
                    )}
-
+                   {/* ... (Keep form fields exactly as they were in previous version) ... */}
                    {/* Terminal ID Searchable Dropdown */}
                    <div className="space-y-1 relative md:col-span-2" ref={dropdownRef}>
                       <label className="text-xs font-bold text-slate-700 uppercase">Terminal ID</label>

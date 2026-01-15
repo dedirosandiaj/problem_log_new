@@ -8,7 +8,7 @@ import { Settings } from './components/Settings';
 import { ActivityLogList } from './components/ActivityLogList';
 import { MailSystem } from './components/MailSystem';
 import { MasterData } from './components/MasterData';
-import { ComplaintList } from './components/ComplaintList'; // Import ComplaintList
+import { ComplaintList } from './components/ComplaintList';
 import { User, ViewState, AppSettings } from './types';
 import { logout } from './services/authService';
 import { getSettings } from './services/settingsService';
@@ -16,26 +16,39 @@ import { getSettings } from './services/settingsService';
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>('users');
-  const [appSettings, setAppSettings] = useState<AppSettings>(getSettings());
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
-  // Memastikan settings terupdate (jika ada perubahan di tab lain / inisialisasi)
+  // Load Settings from DB on Mount
   useEffect(() => {
-    setAppSettings(getSettings());
+    const loadAppConfig = async () => {
+        const settings = await getSettings();
+        setAppSettings(settings);
+    };
+    loadAppConfig();
   }, []);
 
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
-    setCurrentView('dashboard'); // Default to dashboard on login
+    setCurrentView('dashboard');
   };
 
   const handleLogout = async () => {
     if (user) {
-      await logout(user); // Pass user to logout for logging purposes
+      await logout(user);
     } else {
       await logout();
     }
     setUser(null);
   };
+
+  // Wait for settings to load before rendering anything (or show loader)
+  if (!appSettings) {
+      return (
+        <div className="h-screen w-screen flex items-center justify-center bg-slate-50">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      );
+  }
 
   // Render Login Screen if no user
   if (!user) {
@@ -57,7 +70,6 @@ function App() {
       {currentView === 'log_activity' && <ActivityLogList />}
       {currentView === 'mail' && <MailSystem currentUser={user} />}
       
-      {/* New Complaint Route */}
       {currentView === 'complaints' && <ComplaintList currentUser={user} />}
 
       {/* Master Data Routes */}
