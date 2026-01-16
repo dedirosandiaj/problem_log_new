@@ -39,15 +39,21 @@ export const getSettings = async (): Promise<AppSettings> => {
 export const saveSettings = async (settings: AppSettings): Promise<AppSettings> => {
   const { data, error } = await supabase
     .from('app_settings')
-    .upsert({ 
+    .upsert(
+      { 
         key: SETTINGS_KEY, 
         value: settings,
         updated_at: new Date().toISOString()
-    })
+      },
+      { onConflict: 'key' } // PENTING: Memberitahu Supabase untuk update jika 'key' sudah ada
+    )
     .select()
     .single();
 
-  if (error) throw new Error("Gagal menyimpan pengaturan ke database.");
+  if (error) {
+    console.error("Database Error Detail:", error);
+    throw new Error(`Gagal menyimpan ke database: ${error.message} (${error.code})`);
+  }
   
   return data.value as AppSettings;
 };
@@ -73,10 +79,18 @@ export const uploadAppAsset = async (file: File): Promise<string> => {
         });
 
     if (uploadError) {
+        console.error("Upload Error Detail:", uploadError);
+
         // Handle case if bucket doesn't exist
         if (uploadError.message.includes("Bucket not found")) {
-            throw new Error(`Bucket '${STORAGE_BUCKET}' tidak ditemukan. Harap buat Public Bucket bernama '${STORAGE_BUCKET}' di Supabase.`);
+            throw new Error(`Bucket '${STORAGE_BUCKET}' tidak ditemukan. Harap buat Public Bucket bernama '${STORAGE_BUCKET}' di menu Storage Supabase.`);
         }
+        
+        // Handle RLS error specifically
+        if (uploadError.message.includes("row-level security") || uploadError.message.includes("violates")) {
+            throw new Error(`Gagal Upload (Izin Ditolak). Harap jalankan query SQL bagian 'STORAGE POLICIES' di file database_schema.md pada SQL Editor Supabase.`);
+        }
+
         throw uploadError;
     }
 

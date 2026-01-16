@@ -35,23 +35,23 @@ Di halaman konfigurasi "Configure Project":
 
 ---
 
-## 🛠️ Pengembangan Lokal
+## 🛠️ Setup Database & Storage (Supabase)
 
-1. Clone repository.
-2. Buat file `.env` di root folder:
-   ```env
-   VITE_SUPABASE_URL=...
-   VITE_SUPABASE_ANON_KEY=...
-   ```
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Jalankan server development:
-   ```bash
-   npm run dev
-   ```
+Sebelum menjalankan aplikasi, pastikan Anda telah melakukan setup di Dashboard Supabase:
+
+1. **Database Tables**:
+   - Buka menu **SQL Editor**.
+   - Copy semua isi file `database_schema.md`.
+   - Paste dan klik **Run**.
+
+2. **Storage (Wajib untuk Upload Gambar)**:
+   - Buka menu **Storage**.
+   - Klik **New Bucket**.
+   - Beri nama: `app-assets`.
+   - **PENTING**: Centang **"Public Bucket"**.
+   - Simpan.
+   - **PENTING**: Pastikan Anda juga sudah menjalankan query "STORAGE POLICIES" (Bagian 10 di `database_schema.md`) agar aplikasi diizinkan mengupload file.
 
 ## 📂 Struktur Database
 
-File skema database lengkap terdapat di file `database_schema.md`. Silakan copy-paste SQL query di dalamnya ke SQL Editor Supabase untuk membuat tabel yang diperlukan.
+File skema database lengkap terdapat di file `database_schema.md`.

@@ -199,4 +199,23 @@ CREATE POLICY "Enable all access for mail_attachments" ON public.mail_attachment
 
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all access for app_settings" ON public.app_settings FOR ALL USING (true) WITH CHECK (true);
+
+-- 10. STORAGE POLICIES (WAJIB UNTUK UPLOAD GAMBAR)
+-- Jalankan ini agar user bisa upload Logo/Background
+-- Note: Pastikan Bucket 'app-assets' sudah dibuat dan Public.
+
+CREATE POLICY "Allow Public Uploads"
+ON storage.objects FOR INSERT
+TO public
+WITH CHECK (bucket_id = 'app-assets');
+
+CREATE POLICY "Allow Public Select"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'app-assets');
+
+CREATE POLICY "Allow Public Update"
+ON storage.objects FOR UPDATE
+TO public
+USING (bucket_id = 'app-assets');
 ```
