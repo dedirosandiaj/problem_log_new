@@ -17,6 +17,22 @@ export const getUsers = async (): Promise<User[]> => {
   }));
 };
 
+export const getUserById = async (id: string): Promise<User | null> => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .single();
+  
+  if (error || !data) return null;
+
+  return {
+    ...data,
+    lastLogin: data.last_login,
+    permissions: data.permissions || []
+  };
+};
+
 export const createUser = async (userData: any): Promise<User> => {
   const { password, ...rest } = userData;
   

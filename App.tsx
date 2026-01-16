@@ -10,21 +10,36 @@ import { MailSystem } from './components/MailSystem';
 import { MasterData } from './components/MasterData';
 import { ComplaintList } from './components/ComplaintList';
 import { User, ViewState, AppSettings } from './types';
-import { logout } from './services/authService';
+import { logout, restoreSession } from './services/authService';
 import { getSettings } from './services/settingsService';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [currentView, setCurrentView] = useState<ViewState>('users');
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
-  // Load Settings from DB on Mount
+  // Load Settings & Restore Session on Mount
   useEffect(() => {
-    const loadAppConfig = async () => {
-        const settings = await getSettings();
-        setAppSettings(settings);
+    const initApp = async () => {
+        try {
+            // 1. Load Settings
+            const settings = await getSettings();
+            setAppSettings(settings);
+
+            // 2. Restore User Session if exists
+            const restoredUser = await restoreSession();
+            if (restoredUser) {
+                setUser(restoredUser);
+                setCurrentView('dashboard');
+            }
+        } catch (error) {
+            console.error("Initialization failed", error);
+        } finally {
+            setIsAuthChecking(false);
+        }
     };
-    loadAppConfig();
+    initApp();
   }, []);
 
   const handleLoginSuccess = (loggedInUser: User) => {
@@ -41,11 +56,12 @@ function App() {
     setUser(null);
   };
 
-  // Wait for settings to load before rendering anything (or show loader)
-  if (!appSettings) {
+  // Show Loader while checking auth and loading settings
+  if (isAuthChecking || !appSettings) {
       return (
-        <div className="h-screen w-screen flex items-center justify-center bg-slate-50">
+        <div className="h-screen w-screen flex items-center justify-center bg-slate-50 flex-col gap-4">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <p className="text-slate-500 font-medium text-sm">Memuat aplikasi...</p>
         </div>
       );
   }
