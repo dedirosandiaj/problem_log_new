@@ -2,6 +2,7 @@ import { AppSettings } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 const SETTINGS_KEY = 'GLOBAL_SETTINGS';
+const STORAGE_BUCKET = 'app-assets';
 
 // Default Settings Fallback
 const DEFAULT_SETTINGS: AppSettings = {
@@ -35,13 +36,6 @@ export const getSettings = async (): Promise<AppSettings> => {
   return { ...DEFAULT_SETTINGS, ...data.value };
 };
 
-// Sync version needed for initial state in App.tsx (Optional: can be made async in App.tsx)
-// Since we migrated to async DB, this synchronous version is deprecated or needs to handle promise.
-// We will update App.tsx to load settings async. For now, we return default immediately.
-export const getSettingsSync = (): AppSettings => {
-    return DEFAULT_SETTINGS; 
-};
-
 export const saveSettings = async (settings: AppSettings): Promise<AppSettings> => {
   const { data, error } = await supabase
     .from('app_settings')
@@ -63,11 +57,33 @@ export const resetSettings = async (): Promise<AppSettings> => {
   return DEFAULT_SETTINGS;
 };
 
-export const convertFileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-  });
+// New Function: Upload to Supabase Storage
+export const uploadAppAsset = async (file: File): Promise<string> => {
+    // 1. Sanitize filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.floor(Math.random()*1000)}.${fileExt}`;
+    const filePath = `public/${fileName}`;
+
+    // 2. Upload
+    const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+        });
+
+    if (uploadError) {
+        // Handle case if bucket doesn't exist
+        if (uploadError.message.includes("Bucket not found")) {
+            throw new Error(`Bucket '${STORAGE_BUCKET}' tidak ditemukan. Harap buat Public Bucket bernama '${STORAGE_BUCKET}' di Supabase.`);
+        }
+        throw uploadError;
+    }
+
+    // 3. Get Public URL
+    const { data } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(filePath);
+
+    return data.publicUrl;
 };

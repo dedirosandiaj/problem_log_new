@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AppSettings, LoginFeature, User } from '../types';
-import { saveSettings, resetSettings, convertFileToBase64 } from '../services/settingsService';
+import { saveSettings, resetSettings, uploadAppAsset } from '../services/settingsService';
 import { logActivity } from '../services/activityService';
 import { Save, RefreshCcw, Upload, AlertOctagon, Loader2, Image as ImageIcon, LayoutTemplate, Plus, Trash2, X, CheckCircle, XCircle } from 'lucide-react';
 
@@ -13,6 +13,8 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsUpdate, currentUser }) => {
   const [formData, setFormData] = useState<AppSettings>(currentSettings);
   const [loading, setLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false); // New state for upload process
+  
   const [previewLogo, setPreviewLogo] = useState<string | null>(currentSettings.logoUrl);
   const [previewBg, setPreviewBg] = useState<string | null>(currentSettings.loginBackgroundImageUrl);
   
@@ -37,13 +39,13 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // Helper validasi ukuran file (Max 1MB untuk LocalStorage)
+  // Helper validasi ukuran file (Max 2MB untuk Storage upload)
   const validateFile = (file: File): boolean => {
-    const maxSize = 1 * 1024 * 1024; // 1MB
+    const maxSize = 2 * 1024 * 1024; // 2MB
     if (file.size > maxSize) {
       setNotification({
         type: 'error',
-        message: 'Ukuran file terlalu besar! Maksimal 1MB agar tidak memberatkan sistem.'
+        message: 'Ukuran file terlalu besar! Maksimal 2MB.'
       });
       return false;
     }
@@ -54,13 +56,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
     const file = e.target.files?.[0];
     if (file) {
       if (!validateFile(file)) return;
-
+      
+      setIsUploading(true);
       try {
-        const base64 = await convertFileToBase64(file);
-        setPreviewLogo(base64);
-        setFormData(prev => ({ ...prev, logoUrl: base64 }));
-      } catch (error) {
-        setNotification({ type: 'error', message: "Gagal memproses gambar logo" });
+        const publicUrl = await uploadAppAsset(file);
+        setPreviewLogo(publicUrl);
+        setFormData(prev => ({ ...prev, logoUrl: publicUrl }));
+        setNotification({ type: 'success', message: 'Logo berhasil diupload!' });
+      } catch (error: any) {
+        console.error(error);
+        setNotification({ type: 'error', message: error.message || "Gagal upload logo." });
+      } finally {
+        setIsUploading(false);
       }
     }
   };
@@ -70,12 +77,17 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
     if (file) {
       if (!validateFile(file)) return;
 
+      setIsUploading(true);
       try {
-        const base64 = await convertFileToBase64(file);
-        setPreviewBg(base64);
-        setFormData(prev => ({ ...prev, loginBackgroundImageUrl: base64 }));
-      } catch (error) {
-        setNotification({ type: 'error', message: "Gagal memproses gambar background" });
+        const publicUrl = await uploadAppAsset(file);
+        setPreviewBg(publicUrl);
+        setFormData(prev => ({ ...prev, loginBackgroundImageUrl: publicUrl }));
+        setNotification({ type: 'success', message: 'Background berhasil diupload!' });
+      } catch (error: any) {
+        console.error(error);
+        setNotification({ type: 'error', message: error.message || "Gagal upload background." });
+      } finally {
+        setIsUploading(false);
       }
     }
   };
@@ -121,13 +133,13 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
       onSettingsUpdate(updated);
       setNotification({
         type: 'success',
-        message: 'Pengaturan berhasil disimpan! Tampilan telah diperbarui.'
+        message: 'Pengaturan berhasil disimpan!'
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (error) {
+    } catch (error: any) {
       setNotification({
         type: 'error',
-        message: 'Gagal menyimpan. Kemungkinan ukuran gambar total terlalu besar.'
+        message: error.message || 'Gagal menyimpan pengaturan.'
       });
     } finally {
       setLoading(false);
@@ -178,7 +190,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
           )}
           <div className="flex-1">
             <h4 className={`font-bold text-sm ${notification.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-              {notification.type === 'success' ? 'Berhasil Disimpan' : 'Terjadi Kesalahan'}
+              {notification.type === 'success' ? 'Berhasil' : 'Gagal'}
             </h4>
             <p className="text-sm text-slate-600 mt-1 leading-tight">{notification.message}</p>
           </div>
@@ -252,12 +264,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                   <label className="block text-sm font-semibold text-slate-700 mb-3">Logo Aplikasi</label>
                   <div className="flex items-start gap-4">
                     <div className="w-16 h-16 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center overflow-hidden relative group shrink-0">
+                      {isUploading && (
+                        <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center">
+                            <Loader2 size={24} className="animate-spin text-blue-600" />
+                        </div>
+                      )}
+                      
                       {previewLogo ? (
                         <img src={previewLogo} alt="Logo Preview" className="w-full h-full object-contain p-1" />
                       ) : (
                         <ImageIcon size={20} className="text-slate-400" />
                       )}
-                      {previewLogo && (
+                      {previewLogo && !isUploading && (
                         <button 
                           type="button" 
                           onClick={() => { setPreviewLogo(null); setFormData(prev => ({...prev, logoUrl: null})); }}
@@ -274,16 +292,18 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                         accept="image/*"
                         onChange={handleLogoUpload}
                         className="hidden"
+                        disabled={isUploading}
                       />
                       <button 
                         type="button" 
                         onClick={() => logoInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium text-xs flex items-center gap-2 shadow-sm"
+                        disabled={isUploading}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50"
                       >
                         <Upload size={14} />
-                        Upload Logo
+                        {isUploading ? 'Mengupload...' : 'Upload Logo'}
                       </button>
-                      <p className="text-[10px] text-slate-500 mt-1">Max 1MB. Format PNG/JPG.</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Format PNG/JPG. Max 2MB.</p>
                     </div>
                   </div>
                 </div>
@@ -333,6 +353,12 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                 <div>
                    <label className="block text-sm font-semibold text-slate-700 mb-2">Gambar Background Login</label>
                    <div className="relative rounded-xl overflow-hidden h-32 w-full bg-slate-100 border border-slate-200 group">
+                      {isUploading && (
+                        <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center">
+                            <Loader2 size={32} className="animate-spin text-blue-600" />
+                        </div>
+                      )}
+                      
                       {previewBg ? (
                         <div 
                           className="w-full h-full bg-cover bg-center"
@@ -344,7 +370,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                         </div>
                       )}
                       
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity ${isUploading ? 'hidden' : ''}`}>
                          <input 
                             type="file" 
                             ref={bgInputRef}
@@ -361,7 +387,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                           </button>
                       </div>
                    </div>
-                   <p className="text-[10px] text-slate-500 mt-1">Disarankan gambar resolusi tinggi (1920x1080) max 1MB.</p>
+                   <p className="text-[10px] text-slate-500 mt-1">Disarankan gambar resolusi tinggi (1920x1080) max 2MB.</p>
                 </div>
 
                 {/* Dynamic Features List */}
@@ -411,12 +437,6 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                          </button>
                       </div>
                     ))}
-                    
-                    {formData.loginFeatures.length === 0 && (
-                      <div className="text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-slate-400 text-xs">
-                        Belum ada fitur highlight. Tambahkan untuk mempercantik halaman login.
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -428,7 +448,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
               <button 
                 type="button"
                 onClick={handleReset}
-                disabled={loading}
+                disabled={loading || isUploading}
                 className="text-red-600 hover:text-red-700 text-sm font-medium hover:underline disabled:opacity-50"
               >
                 Reset Default
@@ -436,7 +456,7 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
               
               <button 
                 type="submit"
-                disabled={loading}
+                disabled={loading || isUploading}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all font-medium flex items-center gap-2 shadow-lg shadow-blue-500/20 active:scale-95 disabled:opacity-70 disabled:cursor-wait"
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
@@ -498,38 +518,10 @@ export const Settings: React.FC<SettingsProps> = ({ currentSettings, onSettingsU
                               <div className="text-[8px] text-slate-300 leading-tight truncate">{f.desc || 'Deskripsi'}</div>
                            </div>
                          ))}
-                         {formData.loginFeatures.length > 3 && (
-                           <div className="text-[9px] text-center text-slate-400 italic">
-                             + {formData.loginFeatures.length - 3} fitur lainnya...
-                           </div>
-                         )}
                       </div>
                    </div>
                 </div>
              </div>
-
-             {/* Preview Sidebar */}
-             <div className="bg-slate-900 text-slate-300 rounded-xl overflow-hidden shadow-xl border border-slate-800">
-                <div className="p-3 bg-slate-800/50 border-b border-slate-700 font-bold text-xs text-slate-400">
-                  Preview Sidebar Header
-                </div>
-                <div className="p-4">
-                   <div className="flex items-center gap-3">
-                      <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-900/20 shrink-0 w-8 h-8 flex items-center justify-center bg-white">
-                        {previewLogo ? (
-                          <img src={previewLogo} alt="Logo" className="w-full h-full object-contain" />
-                        ) : (
-                          <AlertOctagon size={18} className="text-blue-600" />
-                        )}
-                      </div>
-                      <div className="overflow-hidden">
-                        <h1 className="text-sm font-bold text-white tracking-tight leading-tight truncate">{formData.appName || 'Nama Aplikasi'}</h1>
-                        <span className="text-[9px] text-slate-500 font-medium tracking-wide uppercase truncate block">{formData.tagline || 'Tagline'}</span>
-                      </div>
-                   </div>
-                </div>
-             </div>
-
            </div>
         </div>
       </div>
