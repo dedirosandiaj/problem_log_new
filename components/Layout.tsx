@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { User, ViewState, MenuPermission, AppSettings } from '../types';
+import { User, MenuPermission, AppSettings, ViewState } from '../types';
 import { logActivity } from '../services/activityService';
 import { getUnreadCount } from '../services/mailService';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { 
   Users, 
   LayoutDashboard, 
@@ -21,16 +22,14 @@ import {
   Info,
   CreditCard,
   MessageSquare,
-  FileText // Icon for Data Aduan
+  FileText 
 } from 'lucide-react';
 
 interface LayoutProps {
   user: User;
   settings: AppSettings;
-  currentView: ViewState;
-  onNavigate: (view: ViewState) => void;
   onLogout: () => void;
-  children: React.ReactNode;
+  // Removed currentView and onNavigate as they are now handled by router
 }
 
 // Define Menu Structure
@@ -38,25 +37,45 @@ interface MenuItem {
   id: string;
   label: string;
   icon: React.ElementType;
+  path?: string; // Add path
   disabled?: boolean;
-  permission?: MenuPermission; // Optional explicit permission override
+  permission?: MenuPermission; 
   subItems?: {
     id: ViewState;
     label: string;
+    path: string; // Add path
     icon?: React.ElementType;
-    permission: MenuPermission; // Added permission for sub items
+    permission: MenuPermission;
   }[];
 }
 
-export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onNavigate, onLogout, children }) => {
+// Helper to determine active view based on path
+const getViewFromPath = (pathname: string): string => {
+  if (pathname === '/') return 'dashboard';
+  if (pathname.startsWith('/users')) return 'users';
+  if (pathname.startsWith('/locations')) return 'locations';
+  if (pathname.startsWith('/activity-logs')) return 'log_activity';
+  if (pathname.startsWith('/mail')) return 'mail';
+  if (pathname.startsWith('/complaints')) return 'complaints';
+  if (pathname.startsWith('/settings')) return 'settings';
+  if (pathname.startsWith('/master/category')) return 'master_category';
+  if (pathname.startsWith('/master/complaint-category')) return 'master_complaint_category';
+  if (pathname.startsWith('/master/info')) return 'master_info';
+  if (pathname.startsWith('/master/bank')) return 'master_bank';
+  return '';
+};
+
+export const Layout: React.FC<LayoutProps> = ({ user, settings, onLogout }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentView = getViewFromPath(location.pathname);
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [unreadMailCount, setUnreadMailCount] = useState(0);
   
-  // State to track expanded parent menus
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
 
-  // Fetch mail count periodically
   useEffect(() => {
     const fetchCount = async () => {
       const count = await getUnreadCount(user.id);
@@ -64,52 +83,46 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
     };
 
     fetchCount();
-    // Poll every 10 seconds for new mail
     const interval = setInterval(fetchCount, 10000);
     return () => clearInterval(interval);
-  }, [user.id, currentView]);
+  }, [user.id, location.pathname]);
 
-  // Definisi Menu Lengkap
   const allMenuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/' },
     { 
       id: 'data_master', 
       label: 'Data Master', 
       icon: Database,
       subItems: [
-        { id: 'locations', label: 'Data Lokasi ATM', icon: MapPin, permission: 'locations' },
-        { id: 'master_category', label: 'Kategori Problem', icon: List, permission: 'master_category' },
-        { id: 'master_complaint_category', label: 'Kategori Aduan', icon: MessageSquare, permission: 'master_complaint_category' },
-        { id: 'master_info', label: 'Info Problem', icon: Info, permission: 'master_info' },
-        { id: 'master_bank', label: 'Bank Issuer', icon: CreditCard, permission: 'master_bank' },
+        { id: 'locations', label: 'Data Lokasi ATM', icon: MapPin, permission: 'locations', path: '/locations' },
+        { id: 'master_category', label: 'Kategori Problem', icon: List, permission: 'master_category', path: '/master/category' },
+        { id: 'master_complaint_category', label: 'Kategori Aduan', icon: MessageSquare, permission: 'master_complaint_category', path: '/master/complaint-category' },
+        { id: 'master_info', label: 'Info Problem', icon: Info, permission: 'master_info', path: '/master/info' },
+        { id: 'master_bank', label: 'Bank Issuer', icon: CreditCard, permission: 'master_bank', path: '/master/bank' },
       ]
     },
-    { id: 'complaints', label: 'Data Aduan', icon: FileText }, // New Menu
-    { id: 'users', label: 'Data Pengguna', icon: Users },
+    { id: 'complaints', label: 'Data Aduan', icon: FileText, path: '/complaints' },
+    { id: 'users', label: 'Data Pengguna', icon: Users, path: '/users' },
     { id: 'reports', label: 'Laporan', icon: FileBarChart, disabled: true },
-    { id: 'mail', label: 'Mail System', icon: Mail },
-    { id: 'log_activity', label: 'Log Activity', icon: History },
-    { id: 'settings', label: 'Pengaturan', icon: Settings },
+    { id: 'mail', label: 'Mail System', icon: Mail, path: '/mail' },
+    { id: 'log_activity', label: 'Log Activity', icon: History, path: '/activity-logs' },
+    { id: 'settings', label: 'Pengaturan', icon: Settings, path: '/settings' },
   ];
 
-  // Auto-Expand / Auto-Collapse Logic
+  // Auto-Expand Logic
   useEffect(() => {
-    // Cari apakah view saat ini ada di dalam sub-item menu manapun
     const activeParent = allMenuItems.find(item => 
       item.subItems?.some(sub => sub.id === currentView)
     );
 
     if (activeParent) {
-      // Jika halaman saat ini adalah sub-menu, pastikan parent-nya terbuka
-      // Kita set array baru hanya berisi ID ini agar yang lain tertutup (single open logic)
-      setExpandedMenus([activeParent.id]);
-    } else {
-      // Jika halaman saat ini adalah menu utama (bukan sub-menu), tutup semua collapse
-      setExpandedMenus([]);
+      setExpandedMenus(prev => {
+        if (!prev.includes(activeParent.id)) return [...prev, activeParent.id];
+        return prev;
+      });
     }
   }, [currentView]);
 
-  // Filter menu berdasarkan permission user
   const visibleMenuItems = allMenuItems.filter(item => 
     user.permissions.includes(item.id as MenuPermission)
   );
@@ -120,12 +133,10 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
     );
   };
 
-  const handleNavigation = (view: ViewState, label: string) => {
-    if (view !== currentView) {
-      logActivity(user, 'VIEW', label, `User opened ${label} page`);
-      onNavigate(view);
-      setIsMobileMenuOpen(false);
-    }
+  const handleNavigation = (path: string, label: string) => {
+    logActivity(user, 'VIEW', label, `User opened ${label} page`);
+    navigate(path);
+    setIsMobileMenuOpen(false);
   };
 
   const getPageTitle = () => {
@@ -182,13 +193,10 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
           <div className="px-2 mb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Menu Utama</div>
           {visibleMenuItems.length > 0 ? (
             visibleMenuItems.map((item) => {
-              // Cek jika subItems aktif
-              // Filter subItems berdasarkan permissions user juga
               const visibleSubItems = item.subItems 
                 ? item.subItems.filter(sub => user.permissions.includes(sub.permission))
                 : [];
               
-              // HIDE parent menu jika tidak ada sub-item yang visible
               if (item.subItems && visibleSubItems.length === 0) {
                 return null;
               }
@@ -197,7 +205,6 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
               const isActiveParent = visibleSubItems.some(sub => sub.id === currentView);
               
               if (item.subItems) {
-                // Render Parent Menu with Subitems
                 return (
                   <div key={item.id} className="space-y-1">
                     <button
@@ -212,7 +219,6 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
                       {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </button>
 
-                    {/* Sub Menu Items */}
                     {isExpanded && (
                       <div className="pl-4 space-y-1 animate-fade-in-down">
                         <div className="border-l border-slate-700 pl-2 space-y-1">
@@ -221,7 +227,7 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
                               return (
                                   <button
                                     key={subItem.id}
-                                    onClick={() => handleNavigation(subItem.id, subItem.label)}
+                                    onClick={() => handleNavigation(subItem.path, subItem.label)}
                                     className={`
                                       w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm transition-all duration-200
                                       ${currentView === subItem.id 
@@ -241,13 +247,12 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
                   </div>
                 );
               } else {
-                // Render Standard Menu Item
                 return (
                   <button
                     key={item.id}
                     onClick={() => {
-                       if (!item.disabled) {
-                         handleNavigation(item.id as ViewState, item.label);
+                       if (!item.disabled && item.path) {
+                         handleNavigation(item.path, item.label);
                        }
                     }}
                     disabled={item.disabled}
@@ -263,7 +268,6 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
                     <item.icon size={20} className={`${currentView === item.id ? 'text-white' : 'text-slate-400 group-hover:text-white'} shrink-0`} />
                     <span className="flex-1 text-left truncate">{item.label}</span>
                     
-                    {/* Mail Badge */}
                     {item.id === 'mail' && unreadMailCount > 0 && (
                       <span className="flex-shrink-0 bg-red-500 text-white text-[10px] font-bold h-5 min-w-[20px] px-1.5 flex items-center justify-center rounded-full shadow-md border border-slate-900/50">
                         {unreadMailCount > 9 ? '9+' : unreadMailCount}
@@ -282,7 +286,7 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
           )}
         </nav>
 
-        {/* User Profile (Bottom Sidebar) */}
+        {/* User Profile */}
         <div className="p-4 border-t border-slate-800/50 bg-[#0b1120] shrink-0">
            <div className="flex items-center gap-3 px-3 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50">
               <div className="relative">
@@ -321,7 +325,6 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Profile Dropdown */}
             <div className="relative">
               <button 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
@@ -364,9 +367,9 @@ export const Layout: React.FC<LayoutProps> = ({ user, settings, currentView, onN
           </div>
         </header>
 
-        {/* Page Content */}
+        {/* Page Content Rendered Here via Router */}
         <main className="flex-1 overflow-y-auto bg-slate-100 p-4 md:p-8 scroll-smooth scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-          {children}
+          <Outlet />
         </main>
       </div>
     </div>

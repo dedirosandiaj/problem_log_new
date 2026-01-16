@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { LoginForm } from './components/LoginForm';
 import { Layout } from './components/Layout';
 import { UserList } from './components/UserList';
@@ -9,13 +10,12 @@ import { ActivityLogList } from './components/ActivityLogList';
 import { MailSystem } from './components/MailSystem';
 import { MasterData } from './components/MasterData';
 import { ComplaintList } from './components/ComplaintList';
-import { User, ViewState, AppSettings } from './types';
+import { User, AppSettings } from './types';
 import { logout, restoreSession } from './services/authService';
 import { getSettings } from './services/settingsService';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [currentView, setCurrentView] = useState<ViewState>('users');
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
@@ -31,7 +31,6 @@ function App() {
             const restoredUser = await restoreSession();
             if (restoredUser) {
                 setUser(restoredUser);
-                setCurrentView('dashboard');
             }
         } catch (error) {
             console.error("Initialization failed", error);
@@ -44,7 +43,6 @@ function App() {
 
   const handleLoginSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
-    setCurrentView('dashboard');
   };
 
   const handleLogout = async () => {
@@ -66,42 +64,50 @@ function App() {
       );
   }
 
-  // Render Login Screen if no user
-  if (!user) {
-    return <LoginForm onLoginSuccess={handleLoginSuccess} settings={appSettings} />;
-  }
+  // Protected Route Wrapper
+  const ProtectedLayout = () => {
+    if (!user) {
+      return <Navigate to="/login" replace />;
+    }
 
-  // Render Dashboard Layout if logged in
+    return (
+      <Layout 
+        user={user} 
+        settings={appSettings}
+        onLogout={handleLogout}
+      />
+    );
+  };
+
   return (
-    <Layout 
-      user={user} 
-      settings={appSettings}
-      currentView={currentView} 
-      onNavigate={setCurrentView}
-      onLogout={handleLogout}
-    >
-      {currentView === 'users' && <UserList currentUser={user} onUserUpdate={setUser} />}
-      {currentView === 'dashboard' && <Dashboard />}
-      {currentView === 'locations' && <LocationList currentUser={user} />}
-      {currentView === 'log_activity' && <ActivityLogList />}
-      {currentView === 'mail' && <MailSystem currentUser={user} />}
-      
-      {currentView === 'complaints' && <ComplaintList currentUser={user} />}
-
-      {/* Master Data Routes */}
-      {currentView === 'master_category' && <MasterData currentUser={user} type="CATEGORY" />}
-      {currentView === 'master_complaint_category' && <MasterData currentUser={user} type="COMPLAINT_CATEGORY" />}
-      {currentView === 'master_info' && <MasterData currentUser={user} type="INFO" />}
-      {currentView === 'master_bank' && <MasterData currentUser={user} type="BANK" />}
-      
-      {currentView === 'settings' && (
-        <Settings 
-          currentSettings={appSettings} 
-          onSettingsUpdate={setAppSettings} 
-          currentUser={user}
+    <BrowserRouter>
+      <Routes>
+        <Route 
+          path="/login" 
+          element={!user ? <LoginForm onLoginSuccess={handleLoginSuccess} settings={appSettings} /> : <Navigate to="/" replace />} 
         />
-      )}
-    </Layout>
+        
+        <Route element={<ProtectedLayout />}>
+           <Route path="/" element={<Dashboard />} />
+           <Route path="/users" element={<UserList currentUser={user!} onUserUpdate={setUser} />} />
+           <Route path="/locations" element={<LocationList currentUser={user!} />} />
+           <Route path="/activity-logs" element={<ActivityLogList />} />
+           <Route path="/mail" element={<MailSystem currentUser={user!} />} />
+           <Route path="/complaints" element={<ComplaintList currentUser={user!} />} />
+           
+           {/* Master Data Routes */}
+           <Route path="/master/category" element={<MasterData currentUser={user!} type="CATEGORY" />} />
+           <Route path="/master/complaint-category" element={<MasterData currentUser={user!} type="COMPLAINT_CATEGORY" />} />
+           <Route path="/master/info" element={<MasterData currentUser={user!} type="INFO" />} />
+           <Route path="/master/bank" element={<MasterData currentUser={user!} type="BANK" />} />
+           
+           <Route path="/settings" element={<Settings currentSettings={appSettings} onSettingsUpdate={setAppSettings} currentUser={user!} />} />
+        </Route>
+
+        {/* Catch all redirect to dashboard */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
