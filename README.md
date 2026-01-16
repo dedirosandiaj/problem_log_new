@@ -1,20 +1,57 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Problem Log Dashboard
 
-# Run and deploy your AI Studio app
+Aplikasi dashboard manajemen masalah operasional (Problem Log) yang dibangun dengan React, Vite, dan Supabase.
 
-This contains everything you need to run your app locally.
+## 🚀 Cara Deploy ke Vercel
 
-View your app in AI Studio: https://ai.studio/apps/drive/1Y92OCXauG_4pbGzANJV2gGs6Ky_rlnKh
+Aplikasi ini sudah dikonfigurasi untuk siap di-deploy ke Vercel. Ikuti langkah-langkah berikut:
 
-## Run Locally
+### 1. Push Code ke Git
+Pastikan kode Anda sudah di-upload ke repository Git (GitHub, GitLab, atau Bitbucket).
 
-**Prerequisites:**  Node.js
+### 2. Import Project di Vercel
+1. Buka [Dashboard Vercel](https://vercel.com/dashboard).
+2. Klik tombol **"Add New..."** -> **"Project"**.
+3. Pilih repository Git Anda dan klik **Import**.
 
+### 3. Konfigurasi Environment Variables (PENTING!)
+Agar aplikasi bisa terhubung ke database Supabase, Anda **WAJIB** memasukkan kredensial database di Vercel.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Di halaman konfigurasi "Configure Project":
+1. Buka bagian **Environment Variables**.
+2. Masukkan Variable berikut (sesuai data dari Dashboard Supabase Anda):
+
+| Name | Value |
+|------|-------|
+| `VITE_SUPABASE_URL` | `https://xyz...supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1Ni...` |
+
+*(Jangan lupa klik "Add" untuk setiap variabel)*
+
+### 4. Deploy
+1. Klik tombol **Deploy**.
+2. Tunggu proses build selesai.
+3. Aplikasi Anda sudah live! 
+
+---
+
+## 🛠️ Pengembangan Lokal
+
+1. Clone repository.
+2. Buat file `.env` di root folder:
+   ```env
+   VITE_SUPABASE_URL=...
+   VITE_SUPABASE_ANON_KEY=...
+   ```
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Jalankan server development:
+   ```bash
+   npm run dev
+   ```
+
+## 📂 Struktur Database
+
+File skema database lengkap terdapat di file `database_schema.md`. Silakan copy-paste SQL query di dalamnya ke SQL Editor Supabase untuk membuat tabel yang diperlukan.
